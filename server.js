@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const connectDB = require('./config/db');
+const connectDB = require('./config/db'); // ADD THIS LINE
 const { connectProducer, connectConsumer, disconnectKafka } = require('./config/kafka');
 const { startKafkaConsumer } = require('./services/kafkaConsumer');
 

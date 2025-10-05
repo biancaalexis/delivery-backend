@@ -1,69 +1,148 @@
 const express = require('express');
-const dotenv = require('dotenv');
-const cors = require('cors');
-const authRoutes = require('./routes/authRoutes');
-const orderRoutes = require('./routes/orderRoutes');
-const { connectProducer, connectConsumer, disconnectKafka } = require('./config/kafka');
-const { startKafkaConsumer } = require('./services/kafkaConsumer');
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');  // LINE 4 SHOULD BE THIS
 
-dotenv.config();
+const router = express.Router();
 
-const app = express();
-
-// Connect to MongoDB
-connectDB();
-
-// Connect to Kafka
-const initKafka = async () => {
-  await connectProducer();
-  await connectConsumer();
-  await startKafkaConsumer();
+const generateToken = (userId) => {
+  return jwt.sign({ id: userId }, process.env.JWT_SECRET, {
+    expiresIn: '30d'
+  });
 };
 
-initKafka();
+router.post('/signup', async (req, res) => {
+  try {
+    const { name, email, phone, password, confirmPassword, role } = req.body;
 
-app.use(express.json());
-app.use(cors({
-  origin: 'http://localhost:3000',
-  credentials: true
-}));
-
-app.use('/api/auth', authRoutes);
-app.use('/api/orders', orderRoutes);
-
-app.get('/', (req, res) => {
-  res.json({ 
-    message: 'Delivery App API is running',
-    services: {
-      mongodb: 'Connected',
-      kafka: 'Connected'
+    if (!name || !email || !phone || !password || !role) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide all required fields'
+      });
     }
-  });
+
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Passwords do not match'
+      });
+    }
+
+    if (!['customer', 'rider'].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role. Must be customer or rider'
+      });
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'User already exists with this email'
+      });
+    }
+
+    const user = await User.create({
+      name,
+      email,
+      phone,
+      password,
+      role
+    });
+
+    const token = generateToken(user._id);
+
+    res.status(201).json({
+      success: true,
+      message: 'User registered successfully',
+      data: {
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          role: user.role
+        },
+        token
+      }
+    });
+  } catch (error) {
+    console.error('Signup error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error creating user',
+      error: error.message
+    });
+  }
 });
 
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(err.status || 500).json({
-    success: false,
-    message: err.message || 'Internal Server Error'
-  });
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password, role } = req.body;
+
+    if (!email || !password || !role) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide email, password, and role'
+      });
+    }
+
+    const user = await User.findOne({ email }).select('+password');
+    
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    if (user.role !== role) {
+      return res.status(401).json({
+        success: false,
+        message: `This account is not registered as a ${role}`
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'Account is deactivated'
+      });
+    }
+
+    const isPasswordCorrect = await user.comparePassword(password);
+    if (!isPasswordCorrect) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    const token = generateToken(user._id);
+
+    res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      data: {
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          role: user.role
+        },
+        token
+      }
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error logging in',
+      error: error.message
+    });
+  }
 });
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM signal received: closing HTTP server');
-  await disconnectKafka();
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  console.log('SIGINT signal received: closing HTTP server');
-  await disconnectKafka();
-  process.exit(0);
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
-
+module.exports = router;
