@@ -1,18 +1,14 @@
 const mongoose = require('mongoose');
 
-/**
- * Order Schema
- * Represents delivery orders in the system
- */
 const orderSchema = new mongoose.Schema({
   customer: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // Reference to User model
+    ref: 'User',
     required: true
   },
   rider: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // Reference to User model (rider)
+    ref: 'User',
     default: null
   },
   pickup: {
@@ -67,11 +63,6 @@ const orderSchema = new mongoose.Schema({
   timestamps: true
 });
 
-/**
- * Index for efficient querying
- * - Find pending orders for riders
- * - Find customer's orders
- */
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ customer: 1, createdAt: -1 });
 orderSchema.index({ rider: 1, status: 1 });
