@@ -1,54 +1,112 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
 
-const userSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: [true, 'Please provide a name'],
-    trim: true
+const orderSchema = new mongoose.Schema({
+  customer: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
   },
-  email: {
-    type: String,
-    required: [true, 'Please provide an email'],
-    unique: true,
-    lowercase: true,
-    match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email']
+  rider: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
   },
-  phone: {
-    type: String,
-    required: [true, 'Please provide a phone number'],
-    trim: true
+  items: [{
+    menuItem: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'MenuItem'
+    },
+    name: {
+      type: String,
+      required: true
+    },
+    qty: {
+      type: Number,
+      required: true,
+      min: 1
+    },
+    price: {
+      type: Number,
+      required: true
+    }
+  }],
+  pickup: {
+    address: {
+      type: String,
+      required: [true, 'Please provide pickup address']
+    },
+    coordinates: {
+      lat: Number,
+      lng: Number
+    }
   },
-  password: {
-    type: String,
-    required: [true, 'Please provide a password'],
-    minlength: 6,
-    select: false
+  dropoff: {
+    address: {
+      type: String,
+      required: [true, 'Please provide dropoff address']
+    },
+    coordinates: {
+      lat: Number,
+      lng: Number
+    }
   },
-  role: {
+  status: {
     type: String,
-    enum: ['customer', 'rider', 'admin'],
-    required: [true, 'Please specify user role']
+    enum: ['pending', 'accepted', 'picked_up', 'delivered', 'cancelled'],
+    default: 'pending'
   },
-  isActive: {
-    type: Boolean,
-    default: true
+  totalAmount: {
+    type: Number,
+    required: true,
+    default: 0
+  },
+  deliveryFee: {
+    type: Number,
+    default: 5
+  },
+  notes: {
+    type: String,
+    default: ''
+  },
+  acceptedAt: {
+    type: Date,
+    default: null
+  },
+  pickedUpAt: {
+    type: Date,
+    default: null
+  },
+  deliveredAt: {
+    type: Date,
+    default: null
+  },
+  cancelledAt: {
+    type: Date,
+    default: null
+  },
+  cancellationReason: {
+    type: String,
+    default: null
+  },
+  estimatedDeliveryTime: {
+    type: Number,
+    default: 30
   }
 }, {
   timestamps: true
 });
 
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) {
-    return next();
+orderSchema.index({ status: 1, createdAt: -1 });
+orderSchema.index({ customer: 1, createdAt: -1 });
+orderSchema.index({ rider: 1, status: 1 });
+
+orderSchema.pre('save', function(next) {
+  if (this.items && this.items.length > 0) {
+    this.totalAmount = this.items.reduce((sum, item) => {
+      return sum + (item.price * item.qty);
+    }, 0) + this.deliveryFee;
   }
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
   next();
 });
 
-userSchema.methods.comparePassword = async function(enteredPassword) {
-  return await bcrypt.compare(enteredPassword, this.password);
-};
-
-module.exports = mongoose.model('User', userSchema);
+module.exports = mongoose.model('Order', orderSchema);

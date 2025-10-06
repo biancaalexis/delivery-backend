@@ -1,78 +1,99 @@
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 
-const orderSchema = new mongoose.Schema({
-  customer: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+const userSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: [true, 'Please provide name'],
+    trim: true
   },
-  rider: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+  email: {
+    type: String,
+    required: [true, 'Please provide email'],
+    unique: true,
+    lowercase: true,
+    trim: true,
+    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please provide valid email']
+  },
+  phone: {
+    type: String,
+    required: [true, 'Please provide phone number'],
+    trim: true
+  },
+  password: {
+    type: String,
+    required: [true, 'Please provide password'],
+    minlength: 6,
+    select: false
+  },
+  role: {
+    type: String,
+    enum: ['customer', 'rider', 'admin'],
+    default: 'customer'
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  avatar: {
+    type: String,
     default: null
   },
-  pickup: {
-    address: {
-      type: String,
-      required: [true, 'Please provide pickup address']
-    },
-    coordinates: {
-      lat: Number,
-      lng: Number
-    }
-  },
-  dropoff: {
-    address: {
-      type: String,
-      required: [true, 'Please provide dropoff address']
-    },
-    coordinates: {
-      lat: Number,
-      lng: Number
-    }
-  },
-  item: {
-    name: {
-      type: String,
-      required: [true, 'Please provide item name']
-    },
-    category: {
-      type: String,
-      required: [true, 'Please provide item category'],
-      enum: ['Food', 'Electronics', 'Documents', 'Clothing', 'Other']
-    },
-    restaurant: {
-      type: String,
-      default: null
-    },
-    description: {
-      type: String,
-      default: ''
-    }
-  },
-  status: {
+  // Rider-specific fields
+  vehicleType: {
     type: String,
-    enum: ['pending', 'accepted', 'picked_up', 'delivered', 'cancelled'],
-    default: 'pending'
+    enum: ['bike', 'motorcycle', 'car'],
+    default: null
   },
-  fare: {
+  vehicleNumber: {
+    type: String,
+    default: null
+  },
+  currentLocation: {
+    lat: Number,
+    lng: Number,
+    lastUpdated: Date
+  },
+  isAvailable: {
+    type: Boolean,
+    default: true
+  },
+  totalDeliveries: {
     type: Number,
     default: 0
   },
-  acceptedAt: {
-    type: Date,
-    default: null
+  rating: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 5
   },
-  deliveredAt: {
-    type: Date,
-    default: null
+  earnings: {
+    type: Number,
+    default: 0
   }
 }, {
   timestamps: true
 });
 
-orderSchema.index({ status: 1, createdAt: -1 });
-orderSchema.index({ customer: 1, createdAt: -1 });
-orderSchema.index({ rider: 1, status: 1 });
+userSchema.index({ email: 1 });
+userSchema.index({ role: 1, isActive: 1 });
+userSchema.index({ role: 1, isAvailable: 1 });
 
-module.exports = mongoose.model('Order', orderSchema);
+// Hash password before saving
+userSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) {
+    return next();
+  }
+  
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+  next();
+});
+
+// Compare password method
+userSchema.methods.comparePassword = async function(candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
+};
+
+module.exports = mongoose.model('User', userSchema);

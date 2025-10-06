@@ -1,11 +1,14 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const http = require('http');
 const connectDB = require('./config/db');
 const { connectProducer, connectConsumer, disconnectKafka } = require('./config/kafka');
 const { startKafkaConsumer } = require('./services/kafkaConsumer');
+const { initializeWebSocket } = require('./config/websocket');
 
 const app = express();
+const server = http.createServer(app);
 
 // Middleware
 app.use(cors({
@@ -23,6 +26,9 @@ app.use((req, res, next) => {
 
 // Connect to MongoDB
 connectDB();
+
+// Initialize WebSocket
+initializeWebSocket(server);
 
 // Connect to Kafka
 connectProducer();
@@ -59,6 +65,7 @@ app.get('/api', (req, res) => {
       menu: {
         getAll: 'GET /api/menu',
         getCategories: 'GET /api/menu/categories',
+        getById: 'GET /api/menu/:id',
         create: 'POST /api/menu (admin)',
         update: 'PUT /api/menu/:id (admin)',
         delete: 'DELETE /api/menu/:id (admin)'
@@ -66,9 +73,11 @@ app.get('/api', (req, res) => {
       orders: {
         create: 'POST /api/orders (customer)',
         getAll: 'GET /api/orders',
+        getById: 'GET /api/orders/:id',
         accept: 'POST /api/orders/:id/accept (rider)',
         pickup: 'POST /api/orders/:id/pickup (rider)',
-        deliver: 'POST /api/orders/:id/deliver (rider)'
+        deliver: 'POST /api/orders/:id/deliver (rider)',
+        cancel: 'POST /api/orders/:id/cancel'
       },
       notifications: {
         getAll: 'GET /api/notifications',
@@ -107,11 +116,12 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-const server = app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log('='.repeat(50));
   console.log(`🚀 FastBite Server running on port ${PORT}`);
   console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🌐 API URL: http://localhost:${PORT}`);
+  console.log(`🔌 WebSocket enabled on port ${PORT}`);
   console.log('='.repeat(50));
 });
 
