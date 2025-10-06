@@ -1,6 +1,6 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');  // LINE 4 SHOULD BE THIS
+const User = require('../models/User');
 
 const router = express.Router();
 
@@ -28,10 +28,10 @@ router.post('/signup', async (req, res) => {
       });
     }
 
-    if (!['customer', 'rider'].includes(role)) {
+    if (!['customer', 'rider', 'admin'].includes(role)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid role. Must be customer or rider'
+        message: 'Invalid role. Must be customer, rider, or admin'
       });
     }
 

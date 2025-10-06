@@ -1,70 +1,54 @@
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 
-const orderSchema = new mongoose.Schema({
-  customer: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  rider: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    default: null
-  },
-  pickup: {
-    address: {
-      type: String,
-      required: [true, 'Please provide pickup address']
-    },
-    coordinates: {
-      lat: Number,
-      lng: Number
-    }
-  },
-  dropoff: {
-    address: {
-      type: String,
-      required: [true, 'Please provide dropoff address']
-    },
-    coordinates: {
-      lat: Number,
-      lng: Number
-    }
-  },
-  item: {
-    category: {
-      type: String,
-      required: [true, 'Please provide item category'],
-      enum: ['Food', 'Electronics', 'Documents', 'Clothing', 'Other']
-    },
-    description: {
-      type: String,
-      default: ''
-    }
-  },
-  status: {
+const userSchema = new mongoose.Schema({
+  name: {
     type: String,
-    enum: ['pending', 'accepted', 'picked_up', 'delivered', 'cancelled'],
-    default: 'pending'
+    required: [true, 'Please provide a name'],
+    trim: true
   },
-  fare: {
-    type: Number,
-    default: 0
+  email: {
+    type: String,
+    required: [true, 'Please provide an email'],
+    unique: true,
+    lowercase: true,
+    match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email']
   },
-  acceptedAt: {
-    type: Date,
-    default: null
+  phone: {
+    type: String,
+    required: [true, 'Please provide a phone number'],
+    trim: true
   },
-  deliveredAt: {
-    type: Date,
-    default: null
+  password: {
+    type: String,
+    required: [true, 'Please provide a password'],
+    minlength: 6,
+    select: false
+  },
+  role: {
+    type: String,
+    enum: ['customer', 'rider', 'admin'],
+    required: [true, 'Please specify user role']
+  },
+  isActive: {
+    type: Boolean,
+    default: true
   }
 }, {
   timestamps: true
 });
 
-orderSchema.index({ status: 1, createdAt: -1 });
-orderSchema.index({ customer: 1, createdAt: -1 });
-orderSchema.index({ rider: 1, status: 1 });
+userSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) {
+    return next();
+  }
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+  next();
+});
 
-module.exports = mongoose.model('Order', orderSchema);
+userSchema.methods.comparePassword = async function(enteredPassword) {
+  return await bcrypt.compare(enteredPassword, this.password);
+};
+
+module.exports = mongoose.model('User', userSchema);

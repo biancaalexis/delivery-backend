@@ -1,6 +1,3 @@
-// ============================================
-// FILE: routes/orderRoutes.js (WITH KAFKA)
-// ============================================
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const Order = require('../models/Order');
@@ -9,13 +6,9 @@ const { publishEvent } = require('../config/kafka');
 
 const router = express.Router();
 
-/**
- * Middleware: Authenticate user via JWT
- * Extracts token from Authorization header and verifies it
- */
+// Middleware: Authenticate user via JWT
 const authenticate = async (req, res, next) => {
   try {
-    // Get token from header
     const authHeader = req.headers.authorization;
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -26,11 +19,7 @@ const authenticate = async (req, res, next) => {
     }
 
     const token = authHeader.split(' ')[1];
-
-    // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    // Get user from database
     const user = await User.findById(decoded.id);
     
     if (!user || !user.isActive) {
@@ -40,7 +29,6 @@ const authenticate = async (req, res, next) => {
       });
     }
 
-    // Attach user to request object
     req.user = user;
     next();
   } catch (error) {
@@ -52,9 +40,7 @@ const authenticate = async (req, res, next) => {
   }
 };
 
-/**
- * Middleware: Check if user has required role
- */
+// Middleware: Check if user has required role
 const authorize = (...roles) => {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {
@@ -67,16 +53,11 @@ const authorize = (...roles) => {
   };
 };
 
-/**
- * @route   POST /api/orders
- * @desc    Create a new delivery order
- * @access  Private (Customer only)
- */
+// POST /api/orders - Create a new delivery order
 router.post('/', authenticate, authorize('customer'), async (req, res) => {
   try {
-    const { pickup, dropoff, item, description } = req.body;
+    const { pickup, dropoff, item, description, restaurant, category } = req.body;
 
-    // Validation
     if (!pickup || !dropoff || !item) {
       return res.status(400).json({
         success: false,
@@ -84,13 +65,13 @@ router.post('/', authenticate, authorize('customer'), async (req, res) => {
       });
     }
 
-    // Calculate fare based on distance (simplified - use actual distance calculation in production)
+    // Calculate fare based on distance (simplified)
     const baseFare = 5;
     const perKmRate = 2;
-    const estimatedDistance = Math.random() * 10 + 1; // Mock distance
+    const estimatedDistance = Math.random() * 10 + 1;
     const fare = baseFare + (estimatedDistance * perKmRate);
 
-    // Create order
+    // Create order with detailed item info
     const order = await Order.create({
       customer: req.user._id,
       pickup: {
@@ -100,23 +81,26 @@ router.post('/', authenticate, authorize('customer'), async (req, res) => {
         address: dropoff
       },
       item: {
-        category: item,
+        name: item,
+        category: category || 'Other',
+        restaurant: restaurant || null,
         description: description || ''
       },
       fare: parseFloat(fare.toFixed(2))
     });
 
-    // Populate customer details
     await order.populate('customer', 'name email phone');
 
-    // ✨ KAFKA: Publish order-created event
+    // Kafka: Publish order-created event
     await publishEvent('order-created', {
       orderId: order._id.toString(),
       customerId: order.customer._id.toString(),
       customerName: order.customer.name,
       pickup: order.pickup.address,
       dropoff: order.dropoff.address,
+      itemName: order.item.name,
       itemCategory: order.item.category,
+      restaurant: order.item.restaurant,
       fare: order.fare,
       status: order.status,
       createdAt: order.createdAt
@@ -137,39 +121,26 @@ router.post('/', authenticate, authorize('customer'), async (req, res) => {
   }
 });
 
-/**
- * @route   GET /api/orders
- * @desc    Get orders based on user role
- *          - Customers: Get their own orders
- *          - Riders: Get available (pending) orders or their accepted orders
- * @access  Private
- */
+// GET /api/orders - Get orders based on user role
 router.get('/', authenticate, async (req, res) => {
   try {
     let orders;
     const { status } = req.query;
 
     if (req.user.role === 'customer') {
-      // Customer: Get their own orders
       const query = { customer: req.user._id };
-      
-      if (status) {
-        query.status = status;
-      }
+      if (status) query.status = status;
 
       orders = await Order.find(query)
         .populate('rider', 'name phone')
         .sort({ createdAt: -1 });
 
     } else if (req.user.role === 'rider') {
-      // Rider: Get available orders or their accepted orders
       if (status === 'available' || !status) {
-        // Get pending orders not assigned to anyone
         orders = await Order.find({ status: 'pending', rider: null })
           .populate('customer', 'name phone')
           .sort({ createdAt: -1 });
       } else {
-        // Get rider's own orders
         orders = await Order.find({ rider: req.user._id })
           .populate('customer', 'name phone')
           .sort({ createdAt: -1 });
@@ -191,11 +162,7 @@ router.get('/', authenticate, async (req, res) => {
   }
 });
 
-/**
- * @route   GET /api/orders/:id
- * @desc    Get single order by ID
- * @access  Private
- */
+// GET /api/orders/:id - Get single order by ID
 router.get('/:id', authenticate, async (req, res) => {
   try {
     const order = await Order.findById(req.params.id)
@@ -209,11 +176,11 @@ router.get('/:id', authenticate, async (req, res) => {
       });
     }
 
-    // Check authorization
     const isCustomer = order.customer._id.toString() === req.user._id.toString();
     const isRider = order.rider && order.rider._id.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
 
-    if (!isCustomer && !isRider) {
+    if (!isCustomer && !isRider && !isAdmin) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to view this order'
@@ -234,11 +201,7 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 });
 
-/**
- * @route   POST /api/orders/:id/accept
- * @desc    Rider accepts an order
- * @access  Private (Rider only)
- */
+// POST /api/orders/:id/accept - Rider accepts an order
 router.post('/:id/accept', authenticate, authorize('rider'), async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
@@ -250,7 +213,6 @@ router.post('/:id/accept', authenticate, authorize('rider'), async (req, res) =>
       });
     }
 
-    // Check if order is still available
     if (order.status !== 'pending') {
       return res.status(400).json({
         success: false,
@@ -265,23 +227,23 @@ router.post('/:id/accept', authenticate, authorize('rider'), async (req, res) =>
       });
     }
 
-    // Update order
     order.rider = req.user._id;
     order.status = 'accepted';
     order.acceptedAt = new Date();
     await order.save();
 
-    // Populate details
     await order.populate('customer', 'name phone');
     await order.populate('rider', 'name phone');
 
-    // ✨ KAFKA: Publish order-accepted event
+    // Kafka: Publish order-accepted event
     await publishEvent('order-accepted', {
       orderId: order._id.toString(),
       customerId: order.customer._id.toString(),
       customerName: order.customer.name,
       riderId: order.rider._id.toString(),
       riderName: order.rider.name,
+      itemName: order.item.name,
+      restaurant: order.item.restaurant,
       pickup: order.pickup.address,
       dropoff: order.dropoff.address,
       fare: order.fare,
@@ -303,11 +265,7 @@ router.post('/:id/accept', authenticate, authorize('rider'), async (req, res) =>
   }
 });
 
-/**
- * @route   POST /api/orders/:id/deliver
- * @desc    Rider marks order as delivered
- * @access  Private (Rider only)
- */
+// POST /api/orders/:id/deliver - Rider marks order as delivered
 router.post('/:id/deliver', authenticate, authorize('rider'), async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
@@ -319,7 +277,6 @@ router.post('/:id/deliver', authenticate, authorize('rider'), async (req, res) =
       });
     }
 
-    // Verify this rider owns the order
     if (order.rider.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
@@ -327,7 +284,6 @@ router.post('/:id/deliver', authenticate, authorize('rider'), async (req, res) =
       });
     }
 
-    // Check if order is in correct state
     if (order.status === 'delivered') {
       return res.status(400).json({
         success: false,
@@ -342,27 +298,27 @@ router.post('/:id/deliver', authenticate, authorize('rider'), async (req, res) =
       });
     }
 
-    // Update order
     order.status = 'delivered';
     order.deliveredAt = new Date();
     await order.save();
 
-    // Populate details
     await order.populate('customer', 'name phone');
     await order.populate('rider', 'name phone');
 
-    // ✨ KAFKA: Publish order-delivered event
+    // Kafka: Publish order-delivered event
     await publishEvent('order-delivered', {
       orderId: order._id.toString(),
       customerId: order.customer._id.toString(),
       customerName: order.customer.name,
       riderId: order.rider._id.toString(),
       riderName: order.rider.name,
+      itemName: order.item.name,
+      restaurant: order.item.restaurant,
       pickup: order.pickup.address,
       dropoff: order.dropoff.address,
       fare: order.fare,
       deliveredAt: order.deliveredAt,
-      totalDeliveryTime: Math.round((order.deliveredAt - order.acceptedAt) / 1000 / 60) // minutes
+      totalDeliveryTime: Math.round((order.deliveredAt - order.acceptedAt) / 1000 / 60)
     });
 
     res.status(200).json({

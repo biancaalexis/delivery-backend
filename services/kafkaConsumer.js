@@ -1,32 +1,49 @@
-const { consumer } = require('../config/kafka');
-const Order = require('../models/Order');
-const User = require('../models/User');
+const { consumer, TOPICS } = require('../config/kafka');
+const Notification = require('../models/Notification');
 
-/**
- * Start Kafka consumer to listen for events
- * This enables real-time processing and notifications
- */
 const startKafkaConsumer = async () => {
   try {
     await consumer.run({
-      // Process each message
       eachMessage: async ({ topic, partition, message }) => {
         const eventData = JSON.parse(message.value.toString());
         
-        console.log(`📥 Received event from ${topic}:`, eventData.orderId);
+        console.log(`📥 Received event from ${topic}`);
 
-        // Route to appropriate handler based on topic
         switch (topic) {
-          case 'order-created':
+          case TOPICS.ORDER_CREATED:
             await handleOrderCreated(eventData);
             break;
           
-          case 'order-accepted':
+          case TOPICS.ORDER_ACCEPTED:
             await handleOrderAccepted(eventData);
             break;
+
+          case TOPICS.ORDER_PICKED_UP:
+            await handleOrderPickedUp(eventData);
+            break;
           
-          case 'order-delivered':
+          case TOPICS.ORDER_DELIVERED:
             await handleOrderDelivered(eventData);
+            break;
+
+          case TOPICS.ORDER_CANCELLED:
+            await handleOrderCancelled(eventData);
+            break;
+
+          case TOPICS.MENU_ITEM_CREATED:
+            await handleMenuItemCreated(eventData);
+            break;
+
+          case TOPICS.MENU_ITEM_UPDATED:
+            await handleMenuItemUpdated(eventData);
+            break;
+
+          case TOPICS.MENU_ITEM_DELETED:
+            await handleMenuItemDeleted(eventData);
+            break;
+
+          case TOPICS.USER_REGISTERED:
+            await handleUserRegistered(eventData);
             break;
           
           default:
@@ -41,40 +58,17 @@ const startKafkaConsumer = async () => {
   }
 };
 
-/**
- * Handle order-created event
- * Actions:
- * - Send notification to nearby riders
- * - Log event for analytics
- * - Update cache/search index
- */
 const handleOrderCreated = async (eventData) => {
   try {
-    console.log('🆕 Processing new order:', eventData.orderId);
+    console.log('🆕 Order Created:');
+    console.log(`   Order ID: ${eventData.orderId}`);
     console.log(`   Customer: ${eventData.customerName}`);
-    console.log(`   Route: ${eventData.pickup} → ${eventData.dropoff}`);
-    console.log(`   Fare: $${eventData.fare}`);
+    console.log(`   Items: ${eventData.items.map(i => `${i.qty}x ${i.name}`).join(', ')}`);
+    console.log(`   Total: $${eventData.totalAmount}`);
     
     // TODO: Send push notifications to nearby riders
-    // Example:
-    // const nearbyRiders = await findNearbyRiders(eventData.pickup);
-    // for (const rider of nearbyRiders) {
-    //   await sendPushNotification(rider, {
-    //     title: 'New Delivery Available!',
-    //     body: `${eventData.itemCategory} - $${eventData.fare}`,
-    //     data: { orderId: eventData.orderId }
-    //   });
-    // }
-    
-    // TODO: Update real-time dashboard (WebSocket)
-    // io.emit('new-order', eventData);
-    
-    // TODO: Log to analytics service
-    // await analytics.logOrderCreated({
-    //   orderId: eventData.orderId,
-    //   fare: eventData.fare,
-    //   category: eventData.itemCategory
-    // });
+    // TODO: Update real-time dashboard via WebSocket
+    // TODO: Send SMS to customer with order confirmation
     
     console.log('✅ Order created event processed');
   } catch (error) {
@@ -82,42 +76,16 @@ const handleOrderCreated = async (eventData) => {
   }
 };
 
-/**
- * Handle order-accepted event
- * Actions:
- * - Notify customer that rider is assigned
- * - Update rider's active deliveries count
- * - Remove from available orders pool
- */
 const handleOrderAccepted = async (eventData) => {
   try {
-    console.log('✋ Processing order acceptance:', eventData.orderId);
+    console.log('✋ Order Accepted:');
+    console.log(`   Order ID: ${eventData.orderId}`);
     console.log(`   Rider: ${eventData.riderName}`);
     console.log(`   Customer: ${eventData.customerName}`);
     
-    // TODO: Send notification to customer
-    // const customer = await User.findById(eventData.customerId);
-    // await sendPushNotification(customer, {
-    //   title: 'Rider Assigned!',
-    //   body: `${eventData.riderName} is on the way to pick up your order`,
-    //   data: { orderId: eventData.orderId }
-    // });
-    
-    // TODO: Send SMS notification
-    // await smsService.send(customer.phone, 
-    //   `Your delivery has been accepted by ${eventData.riderName}. Track: https://app.com/track/${eventData.orderId}`
-    // );
-    
-    // TODO: Update rider statistics
-    // await Rider.findByIdAndUpdate(eventData.riderId, {
-    //   $inc: { activeDeliveries: 1, totalAccepted: 1 }
-    // });
-    
-    // TODO: Update real-time map
-    // io.to(`order-${eventData.orderId}`).emit('rider-assigned', {
-    //   riderName: eventData.riderName,
-    //   riderId: eventData.riderId
-    // });
+    // TODO: Send push notification to customer
+    // TODO: Send SMS to customer with rider details
+    // TODO: Initialize real-time tracking
     
     console.log('✅ Order accepted event processed');
   } catch (error) {
@@ -125,74 +93,112 @@ const handleOrderAccepted = async (eventData) => {
   }
 };
 
-/**
- * Handle order-delivered event
- * Actions:
- * - Notify customer of successful delivery
- * - Process payment
- * - Update rider earnings
- * - Request rating/review
- */
+const handleOrderPickedUp = async (eventData) => {
+  try {
+    console.log('📦 Order Picked Up:');
+    console.log(`   Order ID: ${eventData.orderId}`);
+    console.log(`   Rider: ${eventData.riderName}`);
+    
+    // TODO: Send notification to customer
+    // TODO: Update tracking status
+    
+    console.log('✅ Order picked up event processed');
+  } catch (error) {
+    console.error('❌ Error handling order-picked-up event:', error);
+  }
+};
+
 const handleOrderDelivered = async (eventData) => {
   try {
-    console.log('📦 Processing order delivery:', eventData.orderId);
-    console.log(`   Total time: ${eventData.totalDeliveryTime} minutes`);
-    console.log(`   Fare: $${eventData.fare}`);
+    console.log('🎉 Order Delivered:');
+    console.log(`   Order ID: ${eventData.orderId}`);
+    console.log(`   Delivery time: ${eventData.totalDeliveryTime} minutes`);
+    console.log(`   Total: $${eventData.totalAmount}`);
     
-    // TODO: Send delivery confirmation to customer
-    // const customer = await User.findById(eventData.customerId);
-    // await sendPushNotification(customer, {
-    //   title: 'Delivered Successfully!',
-    //   body: 'Your order has been delivered. Please rate your experience.',
-    //   data: { orderId: eventData.orderId, action: 'rate' }
-    // });
-    
+    // TODO: Send delivery confirmation
     // TODO: Process payment
-    // await paymentService.charge({
-    //   customerId: eventData.customerId,
-    //   amount: eventData.fare,
-    //   orderId: eventData.orderId,
-    //   description: `Delivery from ${eventData.pickup} to ${eventData.dropoff}`
-    // });
-    
     // TODO: Update rider earnings
-    // const riderShare = eventData.fare * 0.8; // 80% goes to rider
-    // await Rider.findByIdAndUpdate(eventData.riderId, {
-    //   $inc: { 
-    //     totalEarnings: riderShare,
-    //     completedDeliveries: 1,
-    //     activeDeliveries: -1
-    //   }
-    // });
-    
     // TODO: Send rating request
-    // setTimeout(() => {
-    //   sendPushNotification(customer, {
-    //     title: 'How was your delivery?',
-    //     body: `Rate ${eventData.riderName}`,
-    //     data: { orderId: eventData.orderId, action: 'rate' }
-    //   });
-    // }, 300000); // 5 minutes after delivery
-    
     // TODO: Send email receipt
-    // await emailService.sendReceipt({
-    //   to: customer.email,
-    //   orderId: eventData.orderId,
-    //   fare: eventData.fare,
-    //   deliveryTime: eventData.totalDeliveryTime
-    // });
-    
-    // TODO: Log to analytics
-    // await analytics.logOrderCompleted({
-    //   orderId: eventData.orderId,
-    //   deliveryTime: eventData.totalDeliveryTime,
-    //   fare: eventData.fare,
-    //   riderId: eventData.riderId
-    // });
     
     console.log('✅ Order delivered event processed');
   } catch (error) {
     console.error('❌ Error handling order-delivered event:', error);
+  }
+};
+
+const handleOrderCancelled = async (eventData) => {
+  try {
+    console.log('❌ Order Cancelled:');
+    console.log(`   Order ID: ${eventData.orderId}`);
+    
+    // TODO: Send notifications
+    // TODO: Process refund if needed
+    
+    console.log('✅ Order cancelled event processed');
+  } catch (error) {
+    console.error('❌ Error handling order-cancelled event:', error);
+  }
+};
+
+const handleMenuItemCreated = async (eventData) => {
+  try {
+    console.log('🍔 Menu Item Created:');
+    console.log(`   Item: ${eventData.name}`);
+    console.log(`   Restaurant: ${eventData.restaurant}`);
+    console.log(`   Price: $${eventData.price}`);
+    
+    // TODO: Notify customers about new menu item
+    // TODO: Update search indexes
+    
+    console.log('✅ Menu item created event processed');
+  } catch (error) {
+    console.error('❌ Error handling menu-item-created event:', error);
+  }
+};
+
+const handleMenuItemUpdated = async (eventData) => {
+  try {
+    console.log('✏️ Menu Item Updated:');
+    console.log(`   Item: ${eventData.name}`);
+    console.log(`   Available: ${eventData.isAvailable}`);
+    
+    // TODO: Update cache
+    // TODO: Notify affected orders
+    
+    console.log('✅ Menu item updated event processed');
+  } catch (error) {
+    console.error('❌ Error handling menu-item-updated event:', error);
+  }
+};
+
+const handleMenuItemDeleted = async (eventData) => {
+  try {
+    console.log('🗑️ Menu Item Deleted:');
+    console.log(`   Item: ${eventData.name}`);
+    console.log(`   Restaurant: ${eventData.restaurant}`);
+    
+    // TODO: Update cache
+    // TODO: Handle active orders with this item
+    
+    console.log('✅ Menu item deleted event processed');
+  } catch (error) {
+    console.error('❌ Error handling menu-item-deleted event:', error);
+  }
+};
+
+const handleUserRegistered = async (eventData) => {
+  try {
+    console.log('👤 New User Registered:');
+    console.log(`   Name: ${eventData.name}`);
+    console.log(`   Role: ${eventData.role}`);
+    
+    // TODO: Send welcome email
+    // TODO: Create onboarding notifications
+    
+    console.log('✅ User registered event processed');
+  } catch (error) {
+    console.error('❌ Error handling user-registered event:', error);
   }
 };
 
