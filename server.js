@@ -42,11 +42,13 @@ app.use('/api/orders', require('./routes/orderRoutes'));
 app.use('/api/menu', require('./routes/menuRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/ratings', require('./routes/ratingRoutes'));
+app.use('/api/riders', require('./routes/riderRoutes'));
 
 // Health check
 app.get('/', (req, res) => {
   res.json({ 
-    message: 'FastBite API is running 🚀',
+    message: 'FastBite API is running',
     status: 'healthy',
     timestamp: new Date().toISOString(),
     version: '2.0.0'
@@ -85,12 +87,23 @@ app.get('/api', (req, res) => {
         markAllRead: 'PUT /api/notifications/read-all',
         delete: 'DELETE /api/notifications/:id'
       },
+      ratings: {
+        submit: 'POST /api/ratings',
+        getRiderRatings: 'GET /api/ratings/rider/:riderId'
+      },
+      riders: {
+        toggleAvailability: 'PUT /api/riders/availability (rider)',
+        updateLocation: 'POST /api/riders/location (rider)',
+        getStats: 'GET /api/riders/stats (rider)',
+        getAll: 'GET /api/riders (admin)'
+      },
       admin: {
         stats: 'GET /api/admin/stats',
         orders: 'GET /api/admin/orders',
         users: 'GET /api/admin/users',
         analytics: 'GET /api/admin/analytics',
-        toggleUserStatus: 'PUT /api/admin/users/:id/status'
+        toggleUserStatus: 'PUT /api/admin/users/:id/status',
+        sendAnnouncement: 'POST /api/admin/announcement'
       }
     }
   });
@@ -118,10 +131,10 @@ const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, () => {
   console.log('='.repeat(50));
-  console.log(`🚀 FastBite Server running on port ${PORT}`);
-  console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🌐 API URL: http://localhost:${PORT}`);
-  console.log(`🔌 WebSocket enabled on port ${PORT}`);
+  console.log(`FastBite Server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`API URL: http://localhost:${PORT}`);
+  console.log(`WebSocket enabled on port ${PORT}`);
   console.log('='.repeat(50));
 });
 
@@ -136,7 +149,6 @@ const gracefulShutdown = async (signal) => {
     process.exit(0);
   });
 
-  // Force shutdown after 10 seconds
   setTimeout(() => {
     console.error('Forced shutdown after timeout');
     process.exit(1);
@@ -146,7 +158,6 @@ const gracefulShutdown = async (signal) => {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-// Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
   gracefulShutdown('uncaughtException');

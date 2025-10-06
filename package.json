@@ -1,7 +1,7 @@
 {
-  "name": "delivery-app-backend",
-  "version": "1.0.0",
-  "description": "Delivery app backend with Node.js, Express, and MongoDB",
+  "name": "fastbite-backend",
+  "version": "2.0.0",
+  "description": "FastBite Food Delivery Backend with Node.js, Express, Kafka, WebSockets and MongoDB",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

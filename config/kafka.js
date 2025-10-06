@@ -21,18 +21,23 @@ const TOPICS = {
   ORDER_PICKED_UP: 'order-picked-up',
   ORDER_DELIVERED: 'order-delivered',
   ORDER_CANCELLED: 'order-cancelled',
+  ORDER_RATING_SUBMITTED: 'order-rating-submitted',
   
   // Menu events
   MENU_ITEM_CREATED: 'menu-item-created',
   MENU_ITEM_UPDATED: 'menu-item-updated',
   MENU_ITEM_DELETED: 'menu-item-deleted',
+  MENU_ITEM_OUT_OF_STOCK: 'menu-item-out-of-stock',
   
   // Notification events
   NOTIFICATION_CREATED: 'notification-created',
   NOTIFICATION_SENT: 'notification-sent',
+  NOTIFICATION_READ: 'notification-read',
   
   // User events
   USER_REGISTERED: 'user-registered',
+  USER_STATUS_CHANGED: 'user-status-changed',
+  RIDER_AVAILABILITY_CHANGED: 'rider-availability-changed',
   
   // Communication events
   SMS_REQUESTED: 'sms-requested',
@@ -41,7 +46,15 @@ const TOPICS = {
   
   // Real-time events
   RIDER_LOCATION_UPDATE: 'rider-location-update',
-  ORDER_STATUS_CHANGED: 'order-status-changed'
+  ORDER_STATUS_CHANGED: 'order-status-changed',
+  
+  // Analytics events
+  DAILY_STATS_CALCULATED: 'daily-stats-calculated',
+  REVENUE_MILESTONE_REACHED: 'revenue-milestone-reached',
+  
+  // System events
+  SYSTEM_ANNOUNCEMENT: 'system-announcement',
+  MAINTENANCE_SCHEDULED: 'maintenance-scheduled'
 };
 
 const connectProducer = async () => {
