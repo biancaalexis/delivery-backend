@@ -12,12 +12,20 @@ const generateToken = (userId) => {
 
 router.post('/signup', async (req, res) => {
   try {
-    const { name, email, phone, password, confirmPassword, role } = req.body;
+    const { name, email, phone, password, confirmPassword, role, vehicleType } = req.body;
 
     if (!name || !email || !phone || !password || !role) {
       return res.status(400).json({
         success: false,
         message: 'Please provide all required fields'
+      });
+    }
+
+    // Validate vehicle type for riders
+    if (role === 'rider' && !vehicleType) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please select a vehicle type for rider account'
       });
     }
 
@@ -43,13 +51,20 @@ router.post('/signup', async (req, res) => {
       });
     }
 
-    const user = await User.create({
+    const userData = {
       name,
       email,
       phone,
       password,
       role
-    });
+    };
+
+    // Only add vehicleType if role is rider
+    if (role === 'rider') {
+      userData.vehicleType = vehicleType;
+    }
+
+    const user = await User.create(userData);
 
     const token = generateToken(user._id);
 

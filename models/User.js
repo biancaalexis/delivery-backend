@@ -42,8 +42,7 @@ const userSchema = new mongoose.Schema({
   // Rider-specific fields
   vehicleType: {
     type: String,
-    enum: ['bike', 'motorcycle', 'car'],
-    default: null
+    enum: ['bike', 'motorcycle', 'car']
   },
   vehicleNumber: {
     type: String,
