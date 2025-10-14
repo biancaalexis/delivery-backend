@@ -1,6 +1,7 @@
 const express = require('express');
 const Order = require('../models/Order');
 const MenuItem = require('../models/MenuItem');
+const Rating = require('../models/Rating');
 const { authenticate, authorize } = require('../middleware/auth');
 const { publishEvent, TOPICS } = require('../config/kafka');
 const { emitToUser, emitToRole, emitToOrder } = require('../config/websocket');
@@ -10,6 +11,8 @@ const { sendSMS, sendEmail } = require('../services/communicationService');
 const router = express.Router();
 
 // POST /api/orders - Create order
+// ONLY THE POST /api/orders - Create order route
+
 router.post('/', authenticate, authorize('customer'), async (req, res) => {
   try {
     const { items, pickup, dropoff, notes } = req.body;
@@ -50,15 +53,35 @@ router.post('/', authenticate, authorize('customer'), async (req, res) => {
       };
     });
 
+    // CRITICAL: Calculate totalAmount BEFORE creating order
+    const itemsSubtotal = orderItems.reduce((sum, item) => {
+      return sum + (item.price * item.qty);
+    }, 0);
+    
+    const deliveryFee = 5;
+    const totalAmount = itemsSubtotal + deliveryFee;
+
+    console.log('💰 ORDER CREATION CALCULATION:');
+    console.log('  Items subtotal:', itemsSubtotal);
+    console.log('  Delivery fee:', deliveryFee);
+    console.log('  ✅ TOTAL AMOUNT:', totalAmount);
+
+    // Create order with explicit totalAmount
     const order = await Order.create({
       customer: req.user._id,
       items: orderItems,
       pickup: { address: pickup },
       dropoff: { address: dropoff },
       notes: notes || '',
-      deliveryFee: 5,
+      deliveryFee: deliveryFee,
+      totalAmount: totalAmount,  // EXPLICITLY SET
       estimatedDeliveryTime: 30
     });
+
+    console.log('✅ ORDER CREATED:');
+    console.log('  Order ID:', order._id);
+    console.log('  Stored totalAmount:', order.totalAmount);
+    console.log('  Type:', typeof order.totalAmount);
 
     await order.populate('customer', 'name email phone');
     await order.populate('items.menuItem', 'name category restaurant');
@@ -123,6 +146,7 @@ router.post('/', authenticate, authorize('customer'), async (req, res) => {
 });
 
 // GET /api/orders - Get orders
+// GET /api/orders - Get orders
 router.get('/', authenticate, async (req, res) => {
   try {
     let orders;
@@ -138,16 +162,53 @@ router.get('/', authenticate, async (req, res) => {
         .sort({ createdAt: -1 });
 
     } else if (req.user.role === 'rider') {
-      if (status === 'available' || !status) {
-        orders = await Order.find({ status: 'pending', rider: null })
-          .populate('customer', 'name phone')
-          .populate('items.menuItem', 'name category restaurant')
-          .sort({ createdAt: -1 });
-      } else {
-        orders = await Order.find({ rider: req.user._id })
-          .populate('customer', 'name phone')
-          .populate('items.menuItem', 'name category restaurant')
-          .sort({ createdAt: -1 });
+      // Get available orders (pending, no rider)
+      const availableOrders = await Order.find({ status: 'pending', rider: null })
+        .populate('customer', 'name phone')
+        .populate('items.menuItem', 'name category restaurant')
+        .sort({ createdAt: -1 });
+      
+      // Get rider's active/completed orders (not old abandoned ones)
+      const myOrders = await Order.find({ 
+        rider: req.user._id,
+        status: { $in: ['accepted', 'picked_up', 'delivered'] }
+      })
+        .populate('customer', 'name phone')
+        .populate('items.menuItem', 'name category restaurant')
+        .sort({ createdAt: -1 });
+      
+      orders = [...availableOrders, ...myOrders];
+    }
+    // Convert to plain objects and FIX missing status
+    orders = orders.map(order => {
+      const orderObj = order.toObject();
+      
+      // CRITICAL FIX: Determine status based on timestamps if missing
+      if (!orderObj.status) {
+        if (orderObj.deliveredAt) {
+          orderObj.status = 'delivered';
+        } else if (orderObj.pickedUpAt) {
+          orderObj.status = 'picked_up';
+        } else if (orderObj.acceptedAt || orderObj.rider) {
+          orderObj.status = 'accepted';
+        } else if (orderObj.cancelledAt) {
+          orderObj.status = 'cancelled';
+        } else {
+          orderObj.status = 'pending';
+        }
+        console.log(`⚠️  Fixed missing status for order ${orderObj._id}: ${orderObj.status}`);
+      }
+      
+      return orderObj;
+    });
+
+    // Attach ratings to delivered orders
+    for (let order of orders) {
+      if (order.status === 'delivered') {
+        const rating = await Rating.findOne({ order: order._id });
+        if (rating) {
+          order.rating = rating;
+        }
       }
     }
 
@@ -190,6 +251,14 @@ router.get('/:id', authenticate, async (req, res) => {
         success: false,
         message: 'Not authorized to view this order'
       });
+    }
+
+    // Attach rating if delivered
+    if (order.status === 'delivered') {
+      const rating = await Rating.findOne({ order: order._id });
+      if (rating) {
+        order.rating = rating;
+      }
     }
 
     res.status(200).json({
@@ -578,6 +647,96 @@ router.post('/:id/cancel', authenticate, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error cancelling order',
+      error: error.message
+    });
+  }
+});
+
+// POST /api/orders/:id/rate - Submit rating for order
+router.post('/:id/rate', authenticate, authorize('customer'), async (req, res) => {
+  try {
+    const { rating, comment } = req.body;
+    const order = await Order.findById(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    if (order.customer.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to rate this order'
+      });
+    }
+
+    if (order.status !== 'delivered') {
+      return res.status(400).json({
+        success: false,
+        message: 'Can only rate delivered orders'
+      });
+    }
+
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rating must be between 1 and 5'
+      });
+    }
+
+    // Check if already rated
+    const existingRating = await Rating.findOne({ order: order._id });
+    if (existingRating) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order already rated'
+      });
+    }
+
+    // Create rating
+    const newRating = await Rating.create({
+      order: order._id,
+      customer: req.user._id,
+      rider: order.rider,
+      rating,
+      comment: comment || ''
+    });
+
+    // Update rider's average rating
+    const User = require('../models/User');
+    const riderRatings = await Rating.find({ rider: order.rider });
+    const avgRating = riderRatings.reduce((sum, r) => sum + r.rating, 0) / riderRatings.length;
+    
+    await User.findByIdAndUpdate(order.rider, {
+      rating: parseFloat(avgRating.toFixed(2))
+    });
+
+    // Kafka event
+    await publishEvent(TOPICS.ORDER_RATING_SUBMITTED, {
+      ratingId: newRating._id.toString(),
+      orderId: order._id.toString(),
+      riderId: order.rider.toString(),
+      customerId: req.user._id.toString(),
+      rating,
+      comment
+    });
+
+    // Send SMS to customer
+    await sendSMS(req.user.phone, 
+      `FastBite: Thank you for your ${rating}-star rating! We appreciate your feedback.`);
+
+    res.status(201).json({
+      success: true,
+      message: 'Rating submitted successfully',
+      data: { rating: newRating }
+    });
+  } catch (error) {
+    console.error('Submit rating error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error submitting rating',
       error: error.message
     });
   }
